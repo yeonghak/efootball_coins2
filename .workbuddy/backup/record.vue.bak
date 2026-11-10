@@ -1,0 +1,115 @@
+<template>
+	<view class="page">
+		<view class="content">
+			<view class="intro">
+				<text class="title">记录金币</text>
+				<text class="subtitle">填写当前账户的金币总额，进度会自动更新。</text>
+			</view>
+			<view class="card">
+				<text class="label">上次记录</text>
+				<view class="baseline">
+					<text class="baseline-value">{{ baselineText }}</text>
+					<text class="baseline-date">{{ baselineDateText }}</text>
+				</view>
+				<text class="label">当前账户金币总额</text>
+				<input v-model="amount" class="input amount-input" type="number" placeholder="例如 2750" @focus="savedText = ''"/>
+				<text class="delta" :class="deltaClass">{{ deltaText }}</text>
+				<text class="label">备注（可选）</text>
+				<input v-model="note" class="input" placeholder="例如：打完联赛后结算"/>
+				<text v-if="hasTodayRecord" class="hint">今天已经记过一笔，保存会覆盖今天这条记录。</text>
+			</view>
+			<button class="primary" @tap="save">保存记录</button>
+			<text v-if="savedText" class="saved">{{ savedText }}</text>
+			<view class="card link" @tap="goHistory">
+				<text>查看全部记录</text><text class="arrow">›</text>
+			</view>
+		</view>
+		<app-tabbar active="record"/>
+	</view>
+</template>
+
+<script>
+import AppTabbar from '@/components/AppTabbar.vue'
+import { getData, getCurrentCoins, getBaseline, getRecordOn, upsertDayBalance, formatDateKey } from '@/utils/storage'
+import { formatNumber, formatSigned, formatDayLabel } from '@/utils/format'
+
+export default {
+	components: { AppTabbar },
+	data() {
+		return {
+			amount: '',
+			note: '',
+			baseline: 0,
+			baselineDate: null,
+			hasTodayRecord: false,
+			todayKey: formatDateKey(new Date()),
+			savedText: ''
+		}
+	},
+	computed: {
+		amountNumber() {
+			const raw = String(this.amount == null ? '' : this.amount).trim()
+			if (!raw) return null
+			const value = Number(raw)
+			return Number.isFinite(value) ? Math.round(value) : null
+		},
+		baselineText() { return formatNumber(this.baseline) },
+		baselineDateText() {
+			return this.baselineDate ? formatDayLabel(this.baselineDate) : '初始金币'
+		},
+		delta() {
+			if (this.amountNumber === null) return null
+			return this.amountNumber - this.baseline
+		},
+		deltaText() {
+			if (this.delta === null) return '填写后显示相比上次的变化'
+			if (!this.delta) return '与上次持平'
+			return `比上次 ${formatSigned(this.delta)}`
+		},
+		deltaClass() {
+			if (this.delta === null || !this.delta) return 'delta-flat'
+			return this.delta > 0 ? 'delta-up' : 'delta-down'
+		}
+	},
+	onShow() {
+		this.load()
+	},
+	methods: {
+		load() {
+			const data = getData()
+			this.todayKey = formatDateKey(new Date())
+			const today = getRecordOn(data, this.todayKey)
+			const baseline = getBaseline(data, this.todayKey)
+			this.baseline = baseline.balance
+			this.baselineDate = baseline.date
+			this.hasTodayRecord = !!today
+			this.amount = String(today ? today.balance : getCurrentCoins(data))
+			this.note = today ? today.note : ''
+			this.savedText = ''
+		},
+		save() {
+			const balance = this.amountNumber
+			if (balance === null) {
+				uni.showToast({ title: '请输入账户金币总额', icon: 'none' })
+				return
+			}
+			if (balance < 0) {
+				uni.showToast({ title: '金币总额不能为负数', icon: 'none' })
+				return
+			}
+			const saved = upsertDayBalance(getData(), this.todayKey, balance, String(this.note || '').trim())
+			const record = getRecordOn(saved, this.todayKey)
+			this.load()
+			this.savedText = `已记录 ${formatDayLabel(this.todayKey)} · ${formatNumber(record.balance)} 金币`
+			uni.showToast({ title: '已记录', icon: 'success' })
+		},
+		goHistory() {
+			uni.navigateTo({ url: '/pages/history/history' })
+		}
+	}
+}
+</script>
+
+<style scoped>
+.page{min-height:100vh;background:#f6f2fc;color:#201534}.content{padding:34rpx 36rpx 160rpx}.intro{display:flex;flex-direction:column;gap:12rpx;margin-bottom:30rpx}.title{font-size:44rpx;font-weight:700}.subtitle,.label{font-size:24rpx;color:#756a87}.card{display:flex;flex-direction:column;gap:14rpx;padding:30rpx;border:1rpx solid #e5def0;border-radius:26rpx;background:#fff}.label{margin-top:8rpx}.input{height:82rpx;padding:0 22rpx;border:1rpx solid #e5def0;border-radius:16rpx;background:#fbf9ff;font-size:28rpx;line-height:82rpx}.amount-input{font-size:38rpx;font-weight:700;color:#6f42c1}.baseline{display:flex;justify-content:space-between;align-items:baseline;margin-top:-4rpx}.baseline-value{font-size:34rpx;font-weight:700;color:#201534}.baseline-date{font-size:23rpx;color:#756a87}.delta{margin-top:-6rpx;font-size:24rpx;font-weight:700}.delta-up{color:#6f42c1}.delta-down{color:#b56016}.delta-flat{font-weight:400;color:#8a7fa0}.hint{font-size:23rpx;line-height:1.5;color:#8a7fa0}.primary{margin-top:26rpx;border:0;border-radius:24rpx;background:#6f42c1;color:#fff;font-size:30rpx;font-weight:700;line-height:96rpx}.primary::after{border:0}.saved{display:block;margin-top:22rpx;text-align:center;font-size:26rpx;color:#6f42c1}.link{flex-direction:row;justify-content:space-between;align-items:center;margin-top:26rpx;font-size:27rpx;color:#756a87}.arrow{font-size:34rpx;color:#a99ec0}
+</style>
